@@ -64,12 +64,15 @@ public sealed class FileManagementService : IFileManagementService
 			throw new DirectoryNotFoundException("SearchFolders non configurate");
 		}
 
+		// Estrai gli ultimi 7 caratteri dopo aver rimosso eventuali suffissi numerici (.1, .2, .3, .4)
+		string searchPattern = ExtractLastSevenCharacters(itemCode);
+		
 		string patternTemplate = string.IsNullOrWhiteSpace(_config.FileSearchPattern) ? "{ItemCode}*.*" : _config.FileSearchPattern;
-		string pattern = patternTemplate.Replace("{ItemCode}", SanitizePattern(itemCode));
+		string pattern = patternTemplate.Replace("{ItemCode}", SanitizePattern(searchPattern));
 
-		// Implementazione semplice: enumerazione file e filtro con wildcard -> Regex
+		// Implementazione con gestione duplicati basata sulla cartella padre
 		var regex = WildcardToRegex(pattern, ignoreCase: true);
-		var matches = new List<string>();
+		var allMatches = new List<string>();
 		
 		foreach (var searchFolder in _config.SearchFolders)
 		{
@@ -92,10 +95,10 @@ public sealed class FileManagementService : IFileManagementService
 					var name = Path.GetFileName(file);
 					if (regex.IsMatch(name))
 					{
-						matches.Add(file);
+						allMatches.Add(file);
 					}
 				}
-				_logger.LogInformation("{ItemCode}: cercato in {Path}", itemCode, searchFolder);
+				_logger.LogInformation("{ItemCode}: cercato pattern '{Pattern}' in {Path}", itemCode, searchPattern, searchFolder);
 			}
 			catch (UnauthorizedAccessException ex)
 			{
@@ -107,8 +110,12 @@ public sealed class FileManagementService : IFileManagementService
 			}
 		}
 
-		_logger.LogInformation("{ItemCode}: trovati {Count} file totali", itemCode, matches.Count);
-		return Task.FromResult(matches);
+		// Gestisci duplicati basandosi sulla cartella padre
+		var finalMatches = ResolveDuplicateFiles(allMatches, itemCode);
+		
+		_logger.LogInformation("{ItemCode}: trovati {Count} file totali, selezionati {SelectedCount} dopo risoluzione duplicati", 
+			itemCode, allMatches.Count, finalMatches.Count);
+		return Task.FromResult(finalMatches);
 	}
 
 	public async Task<List<string>> CopyFilesAsync(List<string> sourceFiles, string destinationFolder)
@@ -234,5 +241,158 @@ public sealed class FileManagementService : IFileManagementService
 		}
 
 		return _config.DefaultClientFolder ?? "Adotta Italia Srl";
+	}
+
+	/// <summary>
+	/// Estrae gli ultimi 7 caratteri dell'ItemCode dopo aver rimosso eventuali suffissi numerici (.1, .2, .3, .4)
+	/// </summary>
+	/// <param name="itemCode">Il codice articolo completo</param>
+	/// <returns>Gli ultimi 7 caratteri senza suffissi numerici</returns>
+	private static string ExtractLastSevenCharacters(string itemCode)
+	{
+		if (string.IsNullOrWhiteSpace(itemCode))
+		{
+			return string.Empty;
+		}
+
+		// Rimuovi eventuali suffissi numerici (.1, .2, .3, .4)
+		string cleanedItemCode = itemCode;
+		var suffixPattern = new Regex(@"\.\d+$");
+		cleanedItemCode = suffixPattern.Replace(cleanedItemCode, string.Empty);
+
+		// Estrai gli ultimi 7 caratteri
+		if (cleanedItemCode.Length >= 7)
+		{
+			return cleanedItemCode.Substring(cleanedItemCode.Length - 7);
+		}
+
+		// Se l'ItemCode è più corto di 7 caratteri, restituisci tutto
+		return cleanedItemCode;
+	}
+
+	/// <summary>
+	/// Risolve i file duplicati selezionando quelli che si trovano in cartelle il cui nome corrisponde alla parte iniziale dell'ItemCode
+	/// </summary>
+	/// <param name="allFiles">Lista di tutti i file trovati</param>
+	/// <param name="itemCode">Il codice articolo completo</param>
+	/// <returns>Lista dei file selezionati dopo la risoluzione dei duplicati</returns>
+	private List<string> ResolveDuplicateFiles(List<string> allFiles, string itemCode)
+	{
+		if (allFiles == null || allFiles.Count == 0)
+		{
+			return new List<string>();
+		}
+
+		// Estrai la parte iniziale dell'ItemCode (prima del primo punto dopo il prefisso)
+		string itemCodePrefix = ExtractItemCodePrefix(itemCode);
+		
+		// Raggruppa i file per nome
+		var groupedFiles = allFiles.GroupBy(f => Path.GetFileName(f).ToLowerInvariant())
+			.ToDictionary(g => g.Key, g => g.ToList());
+
+		var selectedFiles = new List<string>();
+
+		foreach (var group in groupedFiles)
+		{
+			var filesWithSameName = group.Value;
+			
+			if (filesWithSameName.Count == 1)
+			{
+				// Nessun duplicato, aggiungi il file
+				selectedFiles.Add(filesWithSameName[0]);
+			}
+			else
+			{
+				// Ci sono duplicati, cerca quello nella cartella corretta
+				var selectedFile = SelectFileByParentFolder(filesWithSameName, itemCodePrefix);
+				selectedFiles.Add(selectedFile);
+				
+				_logger.LogInformation("Duplicati trovati per '{FileName}': selezionato {SelectedPath}", 
+					group.Key, selectedFile);
+			}
+		}
+
+		return selectedFiles;
+	}
+
+	/// <summary>
+	/// Estrae il prefisso dell'ItemCode (es. "PAP.0171" da "PAP.0171.A01-2590-A-EB317")
+	/// </summary>
+	/// <param name="itemCode">Il codice articolo completo</param>
+	/// <returns>Il prefisso dell'ItemCode</returns>
+	private static string ExtractItemCodePrefix(string itemCode)
+	{
+		if (string.IsNullOrWhiteSpace(itemCode))
+		{
+			return string.Empty;
+		}
+
+		// Rimuovi eventuali suffissi numerici (.1, .2, .3, .4)
+		string cleanedItemCode = itemCode;
+		var suffixPattern = new Regex(@"\.\d+$");
+		cleanedItemCode = suffixPattern.Replace(cleanedItemCode, string.Empty);
+
+		// Trova il primo punto dopo il prefisso (es. PAP.0171.A01-2590-A-EB317 -> PAP.0171)
+		var parts = cleanedItemCode.Split('.');
+		if (parts.Length >= 2)
+		{
+			return $"{parts[0]}.{parts[1]}";
+		}
+
+		// Se non ci sono abbastanza parti, restituisci la prima parte
+		return parts.Length > 0 ? parts[0] : string.Empty;
+	}
+
+	/// <summary>
+	/// Seleziona il file corretto tra i duplicati basandosi sulla cartella padre
+	/// </summary>
+	/// <param name="duplicateFiles">Lista dei file duplicati</param>
+	/// <param name="itemCodePrefix">Prefisso dell'ItemCode da cercare nella cartella padre</param>
+	/// <returns>Il file selezionato</returns>
+	private string SelectFileByParentFolder(List<string> duplicateFiles, string itemCodePrefix)
+	{
+		// Prima prova: cerca un file in una cartella che corrisponde esattamente al prefisso
+		foreach (var file in duplicateFiles)
+		{
+			var parentFolder = Path.GetDirectoryName(file);
+			var folderName = Path.GetFileName(parentFolder);
+			
+			if (string.Equals(folderName, itemCodePrefix, StringComparison.OrdinalIgnoreCase))
+			{
+				_logger.LogInformation("File selezionato per corrispondenza esatta cartella: {File}", file);
+				return file;
+			}
+		}
+
+		// Seconda prova: cerca un file in una cartella che contiene il prefisso
+		foreach (var file in duplicateFiles)
+		{
+			var parentFolder = Path.GetDirectoryName(file);
+			var folderName = Path.GetFileName(parentFolder);
+			
+			if (!string.IsNullOrEmpty(folderName) && folderName.Contains(itemCodePrefix, StringComparison.OrdinalIgnoreCase))
+			{
+				_logger.LogInformation("File selezionato per corrispondenza parziale cartella: {File}", file);
+				return file;
+			}
+		}
+
+		// Terza prova: cerca un file in una cartella che inizia con il prefisso
+		foreach (var file in duplicateFiles)
+		{
+			var parentFolder = Path.GetDirectoryName(file);
+			var folderName = Path.GetFileName(parentFolder);
+			
+			if (!string.IsNullOrEmpty(folderName) && folderName.StartsWith(itemCodePrefix, StringComparison.OrdinalIgnoreCase))
+			{
+				_logger.LogInformation("File selezionato per corrispondenza iniziale cartella: {File}", file);
+				return file;
+			}
+		}
+
+		// Fallback: se nessuna corrispondenza, restituisci il primo file
+		_logger.LogWarning("Nessuna corrispondenza trovata per prefisso '{Prefix}', selezionato primo file: {File}", 
+			itemCodePrefix, duplicateFiles[0]);
+		return duplicateFiles[0];
 	}
 }
