@@ -167,7 +167,7 @@ public sealed class SapServiceLayerService : ISapServiceLayerService
 			order.CardName = TryGetString(root, "CardName");
             order.Project = TryGetString(root, "Project");
 
-			if (root.TryGetProperty("DocumentLines", out var lines) && lines.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("DocumentLines", out var lines) && lines.ValueKind == JsonValueKind.Array)
 			{
 				foreach (var line in lines.EnumerateArray())
 				{
@@ -178,7 +178,9 @@ public sealed class SapServiceLayerService : ISapServiceLayerService
 						Quantity = TryGetDecimal(line, "Quantity"),
 						LineNum = TryGetInt(line, "LineNum"),
 						HasBom = false,
-						WarehouseCode = TryGetString(line, "WarehouseCode")
+                        WarehouseCode = TryGetString(line, "WarehouseCode"),
+                        ParNdSip = TryGetString(line, "U_par_ndip1"),
+                        ParNdiv1 = TryGetString(line, "U_par_ndiv1")
 					};
 					order.Items.Add(item);
 				}
@@ -251,6 +253,8 @@ public sealed class SapServiceLayerService : ISapServiceLayerService
 
 		return bom;
 	}
+
+    // Removed GetOrderHelperFileNamesAsync: fields now parsed directly from order lines
 
 	public async Task LogoutAsync(string sessionId)
 	{

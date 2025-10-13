@@ -181,6 +181,74 @@ public sealed class FileManagementService : IFileManagementService
 		return copied;
 	}
 
+	public Task<List<string>> FindFilesByExactNamesAsync(List<string> fileNames)
+	{
+		var results = new List<string>();
+		if (fileNames == null || fileNames.Count == 0)
+		{
+			return Task.FromResult(results);
+		}
+
+		if (_config.SearchFolders == null || _config.SearchFolders.Count == 0)
+		{
+			throw new DirectoryNotFoundException("SearchFolders non configurate");
+		}
+
+		// Normalize requested names to base names without extension
+		var nameSet = new HashSet<string>(
+			fileNames
+				.Where(n => !string.IsNullOrWhiteSpace(n))
+				.Select(n => n.Trim()),
+			StringComparer.OrdinalIgnoreCase);
+		if (nameSet.Count == 0)
+		{
+			return Task.FromResult(results);
+		}
+
+		foreach (var searchFolder in _config.SearchFolders)
+		{
+			if (string.IsNullOrWhiteSpace(searchFolder) || !Directory.Exists(searchFolder))
+			{
+				continue;
+			}
+
+			try
+			{
+				foreach (var file in Directory.EnumerateFiles(searchFolder, "*", SearchOption.AllDirectories))
+				{
+					var baseName = Path.GetFileNameWithoutExtension(file);
+					if (nameSet.Contains(baseName))
+					{
+						results.Add(file);
+					}
+				}
+			}
+			catch (UnauthorizedAccessException ex)
+			{
+				_logger.LogError(ex, "Permessi insufficienti su cartella di ricerca {Path}", searchFolder);
+			}
+			catch (IOException ex)
+			{
+				_logger.LogError(ex, "Errore I/O in lettura cartella di ricerca {Path}", searchFolder);
+			}
+		}
+
+		// Dedup per base name (senza estensione), preferendo la prima occorrenza
+		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var deduped = new List<string>();
+		foreach (var path in results)
+		{
+			var baseName = Path.GetFileNameWithoutExtension(path);
+			if (seen.Add(baseName))
+			{
+				deduped.Add(path);
+			}
+		}
+
+		_logger.LogInformation("Ricerca per nomi base (qualsiasi estensione): richiesti {Req}, trovati {Found}", nameSet.Count, deduped.Count);
+		return Task.FromResult(deduped);
+	}
+
 	public Task<bool> ValidateSearchFoldersAsync()
 	{
 		try

@@ -49,6 +49,8 @@ public sealed class OrderProcessingService : IOrderProcessingService
             result.Project = order.Project;
 			_logger.LogInformation("Ordine recuperato: DocNum={DocNum}, Cliente={Cliente}", order.DocNum, order.CardName);
 
+			// I nomi file aggiuntivi ora sono sui campi utente della singola riga ordine
+
             int processedComponents = 0;
             int copiedFiles = 0;
             int processedOrderItems = 0;
@@ -63,6 +65,28 @@ public sealed class OrderProcessingService : IOrderProcessingService
                 {
                     result.CreatedDestinationFolders.Add(orderFolder);
                 }
+
+				// Copia anche gli eventuali file aggiuntivi specificati nei campi utente della riga (qualsiasi estensione)
+				var rowFileNames = new System.Collections.Generic.List<string>();
+				if (!string.IsNullOrWhiteSpace(item.ParNdSip)) rowFileNames.Add(item.ParNdSip);
+				if (!string.IsNullOrWhiteSpace(item.ParNdiv1)) rowFileNames.Add(item.ParNdiv1);
+				if (rowFileNames.Any())
+				{
+					try
+					{
+						var extraFiles = await _fileService.FindFilesByExactNamesAsync(rowFileNames);
+						if (extraFiles.Count > 0)
+						{
+							var extraCopied = await _fileService.CopyFilesAsync(extraFiles, orderFolder);
+							copiedFiles += extraCopied.Count;
+						}
+					}
+					catch (Exception ex)
+					{
+						_logger.LogError(ex, "Errore copia file aggiuntivi per DocEntry={DocEntry}", docEntry);
+						result.Errors.Add($"Errore copia file aggiuntivi: {ex.Message}");
+					}
+				}
 
 				BillOfMaterial bom;
 				try
@@ -141,7 +165,7 @@ public sealed class OrderProcessingService : IOrderProcessingService
 				return 0;
 			}
 
-			var copied = await _fileService.CopyFilesAsync(files, orderFolder);
+				var copied = await _fileService.CopyFilesAsync(files, orderFolder);
 			return copied.Count;
 		}
 		catch (Exception ex)

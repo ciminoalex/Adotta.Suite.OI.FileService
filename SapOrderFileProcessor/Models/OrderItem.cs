@@ -8,4 +8,6 @@ public sealed class OrderItem
 	public int LineNum { get; set; }
 	public bool HasBom { get; set; }
 	public string? WarehouseCode { get; set; }
+    public string? ParNdSip { get; set; }
+    public string? ParNdiv1 { get; set; }
 }
