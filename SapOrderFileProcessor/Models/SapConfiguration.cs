@@ -24,6 +24,9 @@ public sealed class SapConfiguration
 	// Default client folder for clients not in mappings
 	public string DefaultClientFolder { get; set; } = "Adotta Italia Srl";
 	
+	// Warehouse to prefix mappings
+	public Dictionary<string, string> WarehousePrefixMappings { get; set; } = new();
+	
 	// Folders to search for files (instead of using MasterFolder)
 	public List<string> SearchFolders { get; set; } = new();
 }

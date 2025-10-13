@@ -5,7 +5,7 @@ namespace SapOrderFileProcessor.Services;
 
 public interface IFileManagementService
 {
-	Task<string> CreateOrderFolderAsync(int docNum, string cardCode);
+	Task<string> CreateOrderFolderAsync(int docNum, string cardCode, string? project = null, string? warehouseCode = null);
 	Task<List<string>> FindComponentFilesAsync(string itemCode);
 	Task<List<string>> CopyFilesAsync(List<string> sourceFiles, string destinationFolder);
 	Task<bool> ValidateSearchFoldersAsync();

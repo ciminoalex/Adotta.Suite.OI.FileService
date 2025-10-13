@@ -76,7 +76,36 @@ try
 {
 	logger.LogInformation("Avvio processamento ordine DocEntry: {DocEntry}", docEntry);
 	var result = await processor.ProcessOrderAsync(docEntry);
-	Console.WriteLine(result.Success ? "Successo" : "Fallito");
+    // Stampa prospetto finale
+    Console.WriteLine(result.Success ? "Successo" : "Fallito");
+    Console.WriteLine("==== Prospetto Importazione ====");
+    Console.WriteLine($"1) Numero OI: {result.OrderDocNum}, Numero Progetto: {result.Project ?? "N/A"}");
+    Console.WriteLine("2) Cartelle di destinazione create:");
+    if (result.CreatedDestinationFolders.Count == 0)
+    {
+        Console.WriteLine("   - Nessuna");
+    }
+    else
+    {
+        foreach (var folder in result.CreatedDestinationFolders)
+        {
+            Console.WriteLine($"   - {folder}");
+        }
+    }
+    Console.WriteLine($"3) Articoli dell'OI processati: {result.ProcessedOrderItems}");
+    Console.WriteLine($"4) Componenti totali processati: {result.ProcessedComponents}");
+    Console.WriteLine("5) Componenti senza file trovati:");
+    if (result.MissingComponentItemCodes.Count == 0)
+    {
+        Console.WriteLine("   - Nessuno");
+    }
+    else
+    {
+        foreach (var comp in result.MissingComponentItemCodes)
+        {
+            Console.WriteLine($"   - {comp}");
+        }
+    }
 }
 catch (Exception ex)
 {

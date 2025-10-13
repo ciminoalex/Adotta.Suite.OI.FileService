@@ -21,7 +21,7 @@ public sealed class FileManagementService : IFileManagementService
 		_config = options.Value;
 	}
 
-	public Task<string> CreateOrderFolderAsync(int docNum, string cardCode)
+	public Task<string> CreateOrderFolderAsync(int docNum, string cardCode, string? project = null, string? warehouseCode = null)
 	{
 		if (docNum <= 0)
 		{
@@ -41,13 +41,35 @@ public sealed class FileManagementService : IFileManagementService
 
 		// Determine client folder based on CardCode
 		string clientFolder = GetClientFolder(cardCode);
+		
+		// Build folder path with project and warehouse prefix
+		var pathParts = new List<string> { baseFolder, clientFolder };
+		
+		// Add project subdirectory if available
+		if (!string.IsNullOrWhiteSpace(project))
+		{
+			pathParts.Add(SanitizeFileName(project));
+		}
+		
+		// Add warehouse prefix to folder name
 		string folderName = $"Order_{SanitizeFileName(docNum.ToString())}";
-		string destination = Path.Combine(baseFolder, clientFolder, folderName);
+		if (!string.IsNullOrWhiteSpace(warehouseCode))
+		{
+			string prefix = GetWarehousePrefix(warehouseCode);
+			if (!string.IsNullOrWhiteSpace(prefix))
+			{
+				folderName = $"{prefix} {SanitizeFileName(docNum.ToString())}";
+			}
+		}
+		
+		pathParts.Add(folderName);
+		string destination = Path.Combine(pathParts.ToArray());
 
 		try
 		{
 			Directory.CreateDirectory(destination);
-			_logger.LogInformation("Cartella creata: {Path} per cliente {CardCode}", destination, cardCode);
+			_logger.LogInformation("Cartella creata: {Path} per cliente {CardCode}, progetto {Project}, magazzino {Warehouse}", 
+				destination, cardCode, project ?? "N/A", warehouseCode ?? "N/A");
 			return Task.FromResult(destination);
 		}
 		catch (Exception ex)
@@ -241,6 +263,17 @@ public sealed class FileManagementService : IFileManagementService
 		}
 
 		return _config.DefaultClientFolder ?? "Adotta Italia Srl";
+	}
+
+	private string GetWarehousePrefix(string warehouseCode)
+	{
+		if (_config.WarehousePrefixMappings != null && _config.WarehousePrefixMappings.TryGetValue(warehouseCode, out var prefix))
+		{
+			return prefix;
+		}
+
+		// Default prefix if no mapping found
+		return "NA";
 	}
 
 	/// <summary>

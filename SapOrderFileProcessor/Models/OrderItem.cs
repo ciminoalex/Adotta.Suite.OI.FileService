@@ -7,4 +7,5 @@ public sealed class OrderItem
 	public decimal Quantity { get; set; }
 	public int LineNum { get; set; }
 	public bool HasBom { get; set; }
+	public string? WarehouseCode { get; set; }
 }

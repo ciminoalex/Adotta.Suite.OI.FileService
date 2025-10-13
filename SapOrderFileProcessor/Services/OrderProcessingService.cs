@@ -45,18 +45,24 @@ public sealed class OrderProcessingService : IOrderProcessingService
 
 			// Ordine
             var order = await _sapService.GetSalesOrderAsync(docEntry, session);
-			result.OrderDocNum = order.DocNum;
+            result.OrderDocNum = order.DocNum;
+            result.Project = order.Project;
 			_logger.LogInformation("Ordine recuperato: DocNum={DocNum}, Cliente={Cliente}", order.DocNum, order.CardName);
 
-			// Cartella
-			var orderFolder = await _fileService.CreateOrderFolderAsync(order.DocNum, order.CardCode);
-
-			int processedComponents = 0;
-			int copiedFiles = 0;
+            int processedComponents = 0;
+            int copiedFiles = 0;
+            int processedOrderItems = 0;
 
 			foreach (var item in order.Items)
 			{
 				cancellationToken.ThrowIfCancellationRequested();
+
+				// Create folder for this specific item (based on project and warehouse)
+                var orderFolder = await _fileService.CreateOrderFolderAsync(order.DocNum, order.CardCode, order.Project, item.WarehouseCode);
+                if (!string.IsNullOrWhiteSpace(orderFolder))
+                {
+                    result.CreatedDestinationFolders.Add(orderFolder);
+                }
 
 				BillOfMaterial bom;
 				try
@@ -70,7 +76,7 @@ public sealed class OrderProcessingService : IOrderProcessingService
 					bom = new BillOfMaterial { ParentItemCode = item.ItemCode };
 				}
 
-				if (bom.Components.Any())
+                if (bom.Components.Any())
 				{
 					_logger.LogInformation("Articolo {ItemCode}: trovati {Count} componenti in distinta base", item.ItemCode, bom.Components.Count);
 					foreach (var component in bom.Components)
@@ -85,10 +91,13 @@ public sealed class OrderProcessingService : IOrderProcessingService
 					copiedFiles += await ProcessComponentAsync(item.ItemCode, orderFolder, result);
 					processedComponents++;
 				}
+
+                processedOrderItems++;
 			}
 
 			result.ProcessedComponents = processedComponents;
 			result.CopiedFiles = copiedFiles;
+            result.ProcessedOrderItems = processedOrderItems;
 			result.Success = result.Errors.Count == 0;
 		}
 		catch (Exception ex)
@@ -128,6 +137,7 @@ public sealed class OrderProcessingService : IOrderProcessingService
 				var msg = $"Componente {itemCode}: nessun file trovato nella master folder";
 				_logger.LogWarning(msg);
 				result.WarningMessages.Add(msg);
+                result.MissingComponentItemCodes.Add(itemCode);
 				return 0;
 			}
 

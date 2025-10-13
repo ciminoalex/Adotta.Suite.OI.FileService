@@ -177,7 +177,8 @@ public sealed class SapServiceLayerService : ISapServiceLayerService
 						ItemName = TryGetString(line, "ItemDescription"),
 						Quantity = TryGetDecimal(line, "Quantity"),
 						LineNum = TryGetInt(line, "LineNum"),
-						HasBom = false
+						HasBom = false,
+						WarehouseCode = TryGetString(line, "WarehouseCode")
 					};
 					order.Items.Add(item);
 				}
