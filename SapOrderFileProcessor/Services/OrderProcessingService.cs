@@ -116,7 +116,22 @@ public sealed class OrderProcessingService : IOrderProcessingService
 					processedComponents++;
 				}
 
-                processedOrderItems++;
+				processedOrderItems++;
+
+				// Al termine delle copie per la riga, crea lo ZIP con nome della cartella OI
+				try
+				{
+					// Il nome zip deve essere il nome della cartella di destinazione (es. "IT 2500054")
+					string folderName = System.IO.Path.GetFileName(orderFolder);
+					if (!string.IsNullOrWhiteSpace(folderName))
+					{
+						await _fileService.CreateZipFromFolderAsync(orderFolder, folderName);
+					}
+				}
+				catch (Exception ex)
+				{
+					_logger.LogWarning(ex, "Errore creazione ZIP per cartella {Folder}", orderFolder);
+				}
 			}
 
 			result.ProcessedComponents = processedComponents;

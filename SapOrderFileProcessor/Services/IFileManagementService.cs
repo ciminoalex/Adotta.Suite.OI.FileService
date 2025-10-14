@@ -10,4 +10,5 @@ public interface IFileManagementService
     Task<List<string>> FindFilesByExactNamesAsync(List<string> fileNames);
 	Task<List<string>> CopyFilesAsync(List<string> sourceFiles, string destinationFolder);
 	Task<bool> ValidateSearchFoldersAsync();
+	Task<string?> CreateZipFromFolderAsync(string folderPath, string zipFileNameWithoutExtension);
 }

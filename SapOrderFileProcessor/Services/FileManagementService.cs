@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.IO.Compression;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SapOrderFileProcessor.Models;
@@ -179,6 +180,44 @@ public sealed class FileManagementService : IFileManagementService
 		}
 
 		return copied;
+	}
+
+	public Task<string?> CreateZipFromFolderAsync(string folderPath, string zipFileNameWithoutExtension)
+	{
+		if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+		{
+			_logger.LogError("Cartella sorgente per ZIP non valida: {Path}", folderPath);
+			return Task.FromResult<string?>(null);
+		}
+
+		try
+		{
+			string safeName = SanitizeFileName(zipFileNameWithoutExtension);
+			string zipPath = Path.Combine(folderPath, $"{safeName}.zip");
+
+			// Se esiste già, crea un nome univoco come per i file copiati
+			zipPath = ResolveConflictPath(zipPath);
+
+			// Crea lo zip della cartella
+			ZipFile.CreateFromDirectory(folderPath, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+			_logger.LogInformation("ZIP creato: {ZipPath}", zipPath);
+			return Task.FromResult<string?>(zipPath);
+		}
+		catch (UnauthorizedAccessException ex)
+		{
+			_logger.LogError(ex, "Permessi insufficienti per creare ZIP in {Path}", folderPath);
+			return Task.FromResult<string?>(null);
+		}
+		catch (IOException ex)
+		{
+			_logger.LogError(ex, "Errore I/O creazione ZIP per {Path}", folderPath);
+			return Task.FromResult<string?>(null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Errore imprevisto creazione ZIP per {Path}", folderPath);
+			return Task.FromResult<string?>(null);
+		}
 	}
 
 	public Task<List<string>> FindFilesByExactNamesAsync(List<string> fileNames)
